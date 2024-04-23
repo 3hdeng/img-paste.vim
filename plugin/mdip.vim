@@ -89,13 +89,25 @@ function! s:SaveFileTMPLinux(imgdir, tmpname) abort
 endfunction
 
 function! s:SaveFileTMPWin32(imgdir, tmpname) abort
-    let tmpfile = a:imgdir . '\' . a:tmpname . '.png'
+    echo "\na:imgdir=" . a:imgdir. ", a.tmpname=" . a:tmpname
+    if ( s:os == "Win-GitBash" )
+      let tmpfile = a:imgdir . '/' . a:tmpname . '.png'
+      let tmpfile = s:cygpath2winpath(tmpfile)
+    else  
+      "shd be  \"Windows\"
+      let tmpfile = a:imgdir . '\' . a:tmpname . '.png'
+    endif
+
     let tmpfile = substitute(tmpfile, '\\ ', ' ', 'g')
 
+    echo "tmpfile=" . tmpfile
+
     let clip_command = "Add-Type -AssemblyName System.Windows.Forms;"
-    let clip_command .= "if ($([System.Windows.Forms.Clipboard]::ContainsImage())) {"
+    let clip_command .= "if ([System.Windows.Forms.Clipboard]::ContainsImage()) {"
     let clip_command .= "[System.Drawing.Bitmap][System.Windows.Forms.Clipboard]::GetDataObject().getimage().Save('"
     let clip_command .= tmpfile ."', [System.Drawing.Imaging.ImageFormat]::Png) }"
+    echo "clip_cmd=" . clip_command
+
     let clip_command = "powershell -nologo -noprofile -noninteractive -sta \"".clip_command. "\""
 
     silent call system(clip_command)
@@ -131,7 +143,7 @@ function! s:SaveFileTMP(imgdir, tmpname)
         return s:SaveFileTMPLinux(a:imgdir, a:tmpname)
     elseif s:os == "Darwin"
         return s:SaveFileTMPMacOS(a:imgdir, a:tmpname)
-    elseif s:os == "Windows"
+    elseif s:os == "Windows" || s:os == "Win-GitBash"
         return s:SaveFileTMPWin32(a:imgdir, a:tmpname)
     endif
 endfunction
@@ -206,6 +218,12 @@ function! mdip#MarkdownClipboardImage()
         let s:os = substitute(system('uname'), '\n', '', '')
     endif
 
+    let g:os_detected = s:os
+    if (stridx(s:os, "MING") >= 0) 
+	    let s:os = "Win-GitBash"
+	    " let s:os = \"Windows\"
+    endif
+
     " add check whether file with the name exists
     while  1
         let workdir = s:SafeMakeDir()
@@ -215,6 +233,7 @@ function! mdip#MarkdownClipboardImage()
           let g:mdip_tmpname = g:mdip_imgname . '_' . s:RandomName()
         endif
         let testpath =  workdir . '/' . g:mdip_tmpname . '.png'
+	" why always png??
         if filereadable(testpath) == 0
             break
         else
@@ -224,9 +243,10 @@ function! mdip#MarkdownClipboardImage()
 
     let tmpfile = s:SaveFileTMP(workdir, g:mdip_tmpname)
     if tmpfile == 1
-        return
-    else
+	echo "SaveFileTmp() failed"
         " let relpath = s:SaveNewFile(g:mdip_imgdir, tmpfile)
+    else
+        echo "s:os=". s:os . ", SaveFileTmp() succeeded"
         let extension = split(tmpfile, '\.')[-1]
         let relpath = g:mdip_imgdir_intext . '/' . g:mdip_tmpname . '.' . extension
         if call(get(g:, 'PasteImageFunction'), [relpath])
@@ -234,6 +254,19 @@ function! mdip#MarkdownClipboardImage()
         endif
     endif
 endfunction
+
+function! s:cygpath2winpath(cygpath)
+   if &shellxquote == '"'
+     let l:winpath = system("cygpath -w '" . a:cygpath . "'")
+   else
+     let l:winpath = system('cygpath -w "' . a:cygpath . '"')
+   endif
+   
+   let l:winpath = substitute(l:winpath, '\n', '', '')
+   return l:winpath
+endfunction
+
+
 
 if !exists('g:mdip_imgdir') && !exists('g:mdip_imgdir_absolute')
     let g:mdip_imgdir = 'img'
